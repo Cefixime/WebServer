@@ -10,8 +10,10 @@ public:
     static std::string SERVERADDRESS;   //服务器地址
 	static int PORT;				    //服务器端口
     static std::string DIRECTORY;       // 目录
+	static void set_config();
 private:
     Config() = default;
 	~Config() = default;
 };
+
 #endif

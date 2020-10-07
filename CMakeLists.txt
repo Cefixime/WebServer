@@ -15,4 +15,4 @@ message(STATUS "C++ standard:" ${CXX_STANDARD})
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 message(STATUS "output executable file path:" ${EXECUTABLE_OUTPUT_PATH})
 
-add_executable(${PROJECT_NAME} main.cpp ${SRC_LIST})
+add_executable(${PROJECT_NAME} main.cpp ${SRC_LIST} )

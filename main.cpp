@@ -4,7 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <string.h>
-
+#include "server.h"
 #include "config.h"
 
 using namespace std;
@@ -16,15 +16,9 @@ int main(){
         return 1;
     }
     
-    // 初始化服务器配置
-    Config::BUFFERLENGTH = 128;
-    Config::MAXCONNECTION = 5;
-    Config::PORT = 80;
-    Config::SERVERADDRESS = "127.0.0.1";
-    Config::DIRECTORY = "C:\\MyOwn\\WorkSpace\\CPP\\sockets\\WebServer\\resource";
     // TODO:
     // 可修改服务器配置
-
+    Config::set_config();
 
 
     auto recv_buffer = new char[Config::BUFFERLENGTH];       // 接受缓冲区
@@ -42,7 +36,7 @@ int main(){
     sockaddr_in addrListen;
     addrListen.sin_family = AF_INET;                                                     //指定IP格式
     addrListen.sin_port = htons(Config::PORT);                                           //绑定端口号
-    addrListen.sin_addr.S_un.S_addr = inet_addr(Config::SERVERADDRESS.c_str()); 
+    addrListen.sin_addr.S_un.S_addr = inet_addr(Config::SERVERADDRESS.c_str());          // 地址
     if (bind(listen_socket, (SOCKADDR *)&addrListen, sizeof(addrListen)) == SOCKET_ERROR){
         cout << "bind error" << endl;
         closesocket(listen_socket);
@@ -57,11 +51,12 @@ int main(){
     }
 
     // 等待连接
+    cout << "waiting for connection..." << endl;
     sockaddr_in receive_addr;
     while(true){
         memset(recv_buffer, 0, Config::BUFFERLENGTH);
         memset(send_buffer, 0, Config::BUFFERLENGTH);
-        auto recv_socket = accept(listen_socket, (sockaddr*)&receive_addr, new int());
+        auto recv_socket = accept(listen_socket, (SOCKADDR*)&receive_addr, new int(sizeof(receive_addr)));
         if(recv_socket == INVALID_SOCKET){
             cout << "server receive failed\n" <<"error num: " << WSAGetLastError() << endl;
             closesocket(listen_socket);
@@ -73,14 +68,19 @@ int main(){
 
         // 接受报文
         ofstream recv_temp(Config::DIRECTORY + string("/") + "recv_temp.txt", ios::trunc);
+        int i = 0;
         while(true){
             auto receive_data_len = recv(recv_socket, recv_buffer, Config::BUFFERLENGTH, 0);
-            if(recv_temp.is_open()){
+            if(recv_temp.is_open() && receive_data_len > 0){
                 recv_temp << recv_buffer;
-            }
-            if(receive_data_len == 0)
+            } else
                 break;
         }
+        recv_temp.close();
+
+        ifstream in(Config::DIRECTORY + string("/") + "recv_temp.txt", ios::in);
+        for(string str; in >> str;)
+            cout<<str<<endl;
 
         // TODO:
         // 处理报文
@@ -92,7 +92,6 @@ int main(){
             cout << "server response failed!!!" << " error num is: " << WSAGetLastError() << endl;
         }
 
-        recv_temp.close();
 
 
         closesocket(recv_socket);
