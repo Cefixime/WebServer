@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.0.0)
+project(WebServer)
+link_libraries(wsock32 ws2_32)
+aux_source_directory(./src SRC_LIST)
+set(CXX_STANDARD 11)
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+add_executable(WebServer main.cpp ${SRC_LIST})
