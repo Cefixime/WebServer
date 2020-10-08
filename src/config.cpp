@@ -17,38 +17,34 @@ std::string Config::DIRECTORY = "C:\\MyOwn\\WorkSpace\\CPP\\sockets\\WebServer\\
 void Config::set_config(){
     string temp;
 
-    cout << "server address : " << '\"' << SERVERADDRESS << '\"';
-    cout << "modify to: " << flush;
-    cin >> temp;
+    cout << "server address " << '\"' << SERVERADDRESS << "\":" << flush;
+    getline(cin, temp);
     if(!temp.empty())
         SERVERADDRESS = temp;
 
-    cout << "\nlisten port: " << '\"' << PORT << '\"';
-    cout << "modify to: " << flush;
-    cin >> temp;
+    cout << "listen port " << '\"' << PORT << "\":" << flush;
+    getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> PORT;
     }
 
-    cout << "\nmax connection: " << '\"' << MAXCONNECTION << '\"';
-    cout << "modify to: " << flush;
-    cin >> temp;
+    cout << "max connection " << '\"' << MAXCONNECTION << "\":" << flush;
+    getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> MAXCONNECTION;
     }
 
-    cout << "\nbuffer length: " << '\"' << BUFFERLENGTH << '\"';
-    cout << "modify to: " << flush;
-    cin >> temp;
+    cout << "buffer length " << '\"' << BUFFERLENGTH << "\":" << flush;
+    getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> BUFFERLENGTH;
     }
 
-    cout << "\nresource root directory: " << '\"' << DIRECTORY << '\"';
-    cin >> temp;
+    cout << "resource root directory " << '\"' << DIRECTORY << "\":" << flush;
+    getline(cin, temp);
     if(!temp.empty()){
         DIRECTORY = temp;
     }
