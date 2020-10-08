@@ -7,45 +7,51 @@ using namespace std;
 
 
 // 初始化服务器配置
-int Config::BUFFERLENGTH = 128;
+int Config::BUFFERLENGTH = 1024;
 int Config::MAXCONNECTION = 5;
 int Config::PORT = 80;
 std::string Config::SERVERADDRESS = "127.0.0.1";
-std::string Config::DIRECTORY = "C:\\MyOwn\\WorkSpace\\CPP\\sockets\\WebServer\\resource";
-
+std::string Config::RESOURCE = "C:\\MyOwn\\WorkSpace\\CPP\\sockets\\WebServer\\resource";
+std::string Config::CACHE = "C:\\MyOwn\\WorkSpace\\CPP\\sockets\\WebServer\\cache";
 // 用户修改服务器配置
 void Config::set_config(){
     string temp;
 
-    cout << "server address " << '\"' << SERVERADDRESS << "\":" << flush;
+    cout << "default server address " << '\"' << SERVERADDRESS << "\":" << flush;
     getline(cin, temp);
     if(!temp.empty())
         SERVERADDRESS = temp;
 
-    cout << "listen port " << '\"' << PORT << "\":" << flush;
+    cout << "default listen port " << '\"' << PORT << "\":" << flush;
     getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> PORT;
     }
 
-    cout << "max connection " << '\"' << MAXCONNECTION << "\":" << flush;
+    cout << "default max connection " << '\"' << MAXCONNECTION << "\":" << flush;
     getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> MAXCONNECTION;
     }
 
-    cout << "buffer length " << '\"' << BUFFERLENGTH << "\":" << flush;
+    cout << "default buffer length " << '\"' << BUFFERLENGTH << "\":" << flush;
     getline(cin, temp);
     if(!temp.empty()){
         istringstream is(temp);
         is >> BUFFERLENGTH;
     }
 
-    cout << "resource root directory " << '\"' << DIRECTORY << "\":" << flush;
+    cout << "default resource root directory " << '\"' << RESOURCE << "\":" << flush;
     getline(cin, temp);
     if(!temp.empty()){
-        DIRECTORY = temp;
+        RESOURCE = temp;
+    }
+
+    cout << "default cache root directory " << '\"' << CACHE << "\":" << flush;
+    getline(cin, temp);
+    if(!temp.empty()){
+        CACHE = temp;
     }
 }
