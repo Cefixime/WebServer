@@ -3,7 +3,7 @@
 #include <sstream>
 #include "myhttp.h"
 #define MAX_LINE_LENGTH 128
-#define ERROR_FILE_LEN 138      // 404 not found 页面的长度
+#define ERROR_FILE_LEN 229      // 404 not found 页面的长度
 using namespace std;
 
 const string HttpFileType::html = string("text/html");
@@ -15,14 +15,19 @@ const string HttpFileType::gif = string("image/gif");
 const string HttpFileType::mp3 = string("audio/mp3");
 const string HttpFileType::mp4 = string("video/mpeg4");
 
-string HttpHeader::cons_header(string status, string file_type, string file_length){
-    return  "HTTP/1.1 " + status +"\r\n" +                        \
-            "Content-Type: " + file_type + ";charset=UTF-8\r\n"   \
-            "Content-Length: " + file_length + "\r\n\r\n";
+string HttpResponseHeader::cons_header(bool text) const {
+    if(text)
+        return  "HTTP/1.1 " + _status +"\r\n" +                        \
+                "Content-Type: " + _file_type + ";charset=utf-8\r\n"                 \
+                "Content-Length: " + _file_length + "\r\n\r\n";
+    else
+        return  "HTTP/1.1 " + _status +"\r\n" +                        \
+                "Content-Type: " + _file_type + "\r\n"                 \
+                "Content-Length: " + _file_length + "\r\n\r\n";
 }
 
 HttpGetHeader::HttpGetHeader(string header)
-    :HttpHeader(header){
+    :_header(move(header)){
     istringstream istring(_header);
     // 只要一行
     auto temp = new char[MAX_LINE_LENGTH];
@@ -38,7 +43,7 @@ HttpGetHeader::HttpGetHeader(string header)
 }
 
 HttpResponseHeader::HttpResponseHeader(HttpGetHeader& get_header, string resource_dir){
-    ifstream fin(get_header.get_req_file());
+    ifstream fin(resource_dir + get_header.get_req_file(), ios::binary);
     if(fin){
         // 状态码
         _status = string("200 OK"); 
@@ -75,7 +80,6 @@ HttpResponseHeader::HttpResponseHeader(HttpGetHeader& get_header, string resourc
         _status = string("404 Not Found");
         _file_type = HttpFileType::html;
         _file_length = to_string(ERROR_FILE_LEN);
-
     }
-    _header = cons_header(_status, _file_type, _file_length);
+    _header = cons_header(_file_type == HttpFileType::html);
 }

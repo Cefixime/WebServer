@@ -36,19 +36,16 @@ private:
     void recv_mes(SOCKET s, std::string file_path);   
 
     // 发送文件 
-    void send_mes(SOCKET s, std::ifstream* file_stream, RequestState& finished);  
-    
-    // 准备文件
-    void prepare_file(RequestTask& req);
-
-    // 解析报文请求文件
-    std::pair<std::string,std::string> parse(SOCKET s);
+    void send_mes(SOCKET s, RequestTask& rt);  
 
     // 获取IP地址   
     std::string  get_addr(SOCKET s);
 
     // 获取端口
-    int get_port(SOCKET s);                             
+    int get_port(SOCKET s);    
+
+    // 缓存的http报头文件
+    static std::string cache_file(SOCKET s);
 public:
     Server();
     ~Server();

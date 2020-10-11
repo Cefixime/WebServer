@@ -16,17 +16,11 @@ public:
     static const std::string mp4;
 };
 
-class HttpHeader{
-protected:
-    std::string _header;
-    std::string cons_header(std::string status, std::string file_type, std::string file_length);
-    HttpHeader(std::string header):_header(std::move(header)){};
-    HttpHeader() = default;
-};
 
-class HttpGetHeader:HttpHeader{
+class HttpGetHeader{
 private:                           
     std::string _req_file;
+    std::string _header;
 public:
     std::string get_header() const{return _header;};        // 响应头
     std::string get_req_file() const{return _req_file;};   // 请求的文件
@@ -34,17 +28,20 @@ public:
 };
 
 
-class HttpResponseHeader:HttpHeader{
+class HttpResponseHeader{
 private:
     std::string _status;                                // 状态码
     std::string _file_length;                           // 文件长度
-    std::string _file_type;                             // 文件类型                              // 响应头
+    std::string _file_type;                             // 文件类型 
+    std::string _header;                                // 响应头
+
+    std::string cons_header(bool text) const;
 public:
     // 从请求报头中解析得到响应头
     HttpResponseHeader(HttpGetHeader& get_header, std::string resource_dir);
-
     // 得到响应头的字符串
     std::string get_header() const {return _header;};
+    std::string get_length() const {return _file_length;}
 };
 
 #endif

@@ -9,7 +9,7 @@ message(STATUS "SOURCE dir: " ${PROJECT_SOURCE_DIR})
 include_directories(${INCLUDE_PATH})
 aux_source_directory(./src SRC_LIST)
 
-set(CXX_STANDARD 11)
+set(CXX_STANDARD 17)
 message(STATUS "C++ standard:" ${CXX_STANDARD})
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)

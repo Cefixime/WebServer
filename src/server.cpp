@@ -33,7 +33,7 @@ int Server::WinsockStartup(){
     auto wsadata = new WSADATA();
     auto wsa_result = WSAStartup(version, (LPWSADATA)wsadata);
     if(wsa_result != 0){
-        cout << "Winsock start fail" << endl;
+        cout << "ERROR : Winsock start fail" << endl;
         return -1;
     }
     return 0;
@@ -43,7 +43,7 @@ int Server::ServerStartup(){
     // 配置socket
     srv_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (srv_socket == INVALID_SOCKET){
-        cout << "Fail to create listen socket" << endl;
+        cout << "ERROR : Fail to create listen socket" << endl;
         return -1;
     }
     // 绑定IP和端口
@@ -51,7 +51,7 @@ int Server::ServerStartup(){
     srv_addr.sin_port = htons(Config::PORT);                                           //绑定端口号
     srv_addr.sin_addr.S_un.S_addr = inet_addr(Config::SERVERADDRESS.c_str());          // 地址
     if (bind(srv_socket, (SOCKADDR *)&srv_addr, sizeof(srv_addr)) == SOCKET_ERROR){
-        cout << "bind error" << endl;
+        cout << "ERROR : bind error" << endl;
         closesocket(srv_socket);
         return -1;
     }
@@ -60,7 +60,7 @@ int Server::ServerStartup(){
 
 int Server::ListenStartup(){
     if (listen(srv_socket, Config::MAXCONNECTION) == SOCKET_ERROR){
-        cout << "listen error" << endl;
+        cout << "ERROR : listen error" << endl;
         closesocket(srv_socket);
         return -1;
     } else
@@ -73,10 +73,13 @@ int Server::WinsockStop(){
 
 int Server::Loop(){
     sockaddr_in client_addr;
+    timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 10;
     int client_addrlen = sizeof(client_addr);
     //非阻塞模式
     if(ioctlsocket(srv_socket, FIONBIO, block_mode) == SOCKET_ERROR) {     
-        cout << "ioctlsocket() for new session failed with error!\n";
+        cout << "ERROR : ioctlsocket() for new session failed with error!\n";
         return -1;
     }
     while (true) {
@@ -93,14 +96,13 @@ int Server::Loop(){
         }
 
         // 接受信号
-        socket_signal = select(0, rfds, wfds, NULL, NULL);
+        socket_signal = select(0, rfds, wfds, NULL, &tv);
 
         if(socket_signal == SOCKET_ERROR){
-            cout << "select error!" << endl;
+            cout << "ERROR :  select error!" << endl;
             cout << WSAGetLastError();
             return -1;
         }
-
         if(FD_ISSET(srv_socket, rfds)){
             socket_signal--;
             
@@ -109,10 +111,10 @@ int Server::Loop(){
 
             if(new_sess != INVALID_SOCKET){
                 sess_sockets.push_back(new_sess);
-                cout << "session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
+                cout << "INFO :  session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
                 // 设置非阻塞
                 if(ioctlsocket(new_sess, FIONBIO, block_mode) == SOCKET_ERROR){
-                    cout << "ioctlsocket() for new session failed with error!\n";
+                    cout << "ERROR :  ioctlsocket() for new session failed with error!\n";
                     return -1;
                 }
             }
@@ -124,28 +126,22 @@ int Server::Loop(){
                 if(FD_ISSET(sess, rfds)){
                     if(req_map.find(sess) == req_map.end())
                         req_map[sess] = RequestTask();
-                    cout << "--message from client\n";
                     socket_signal--;
-                    recv_mes(sess, Config::CACHE + "\\recv_temp" + to_string(sess) + ".txt");
+                    recv_mes(sess, cache_file(sess));
                     auto &req = req_map[sess];
-                    if(req.state == RequestState::UNSOLVE ) req.state = RequestState::IN_STARTING;
-                } else if(req_map[sess].state == RequestState::IN_STARTING){
+                    if(req.state == RequestState::UNSOLVE || req.state == RequestState::FINISH)
+                        req.state = RequestState::IN_STARTING;
+                } else if(sess != srv_socket && req_map[sess].state == RequestState::IN_STARTING){
                     req_map[sess].state = RequestState::WAITING_RESPONSE;
-                    // TODO:解析报头
-                    auto parse_result = parse(sess);
-                    // remove((Config::CACHE + "\\recv_temp" + to_string(sess)).c_str());  // 删除报头文件
-                    req_map[sess].file_path = parse_result.first;
-                    req_map[sess].file_type = parse_result.second;
-                    //TODO:准备文件
-                    prepare_file(req_map[sess]);
+                    req_map[sess].parse(sess);
+                    remove(cache_file(sess).c_str());                   // 删除报头文件
+                    req_map[sess].prepare_file();
                 }
 
                 if(FD_ISSET(sess, wfds)){
                     socket_signal--;
-                    if(req_map[sess].state == RequestState::WAITING_RESPONSE){
-                        cout << "--send to client";
-                        // TODO:根据解析内容回复信息
-                        send_mes(sess, req_map[sess].file_stream, req_map[sess].state);
+                    if(req_map[sess].state == RequestState::WAITING_RESPONSE || req_map[sess].state == RequestState::WAITING_FILE){
+                        send_mes(sess, req_map[sess]);
                     }
                 }
                 // 服务器socket有信号产生
@@ -201,36 +197,71 @@ void Server::recv_mes(SOCKET s){
 void Server::recv_mes(SOCKET s, string file_path){
     memset(recv_buf, 0, Config::BUFFERLENGTH);
     stringstream recv_stream;
-    fstream outfile;
-    int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH - 1, 0);
+    ofstream outfile;
+    int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
     if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
         closesocket(s);
-        cout << "--invlida socket" << s << '\n';
+        cout << "WARNING :  invlida socket" << s << '\n';
         invalid_sockets.push_back(s);
     } else {
-        outfile.open(file_path, ios::app|ios::out|ios::binary);
-        cout << "--getdata" <<" socket:"<< s << endl;
-        outfile << string(recv_buf) << flush;
+        outfile.open(file_path, ios::app|ios::binary);
+        cout << "INFO :  receive " << bytes_num << " bytes from" <<" socket:"<< s << endl;
+        outfile.write(recv_buf, bytes_num);
         outfile.close();
+        if(bytes_num < Config::BUFFERLENGTH){
+            ifstream infile(file_path);
+            cout << "INFO : HTTP request information\n";
+            cout << infile.rdbuf();
+        }
     }
 }
 
 void Server::remove_invalid_sockets(){
     for(auto& s: invalid_sockets){
         sess_sockets.remove(s);
+        auto key = req_map.find(s);
+        if(key != req_map.end())
+            req_map.erase(req_map.find(s));
     }
 }
 
-void Server::send_mes(SOCKET s, ifstream* rfile, RequestState& finished){
-    memset(send_buf, 0, Config::BUFFERLENGTH);
-    rfile->read(send_buf, Config::BUFFERLENGTH);
-    if(rfile->cur == rfile->end && finished != RequestState::FINISH)
-        finished = RequestState::FINISH;
-    int bytes_num = send(s, send_buf, Config::BUFFERLENGTH, 0);
-    if( bytes_num == SOCKET_ERROR | bytes_num == 0){
-        cout << "send error" << endl;
-    } else {
-        cout << "send " << bytes_num << " bytes\n";
-        cout << send_buf;
+void Server::send_mes(SOCKET s, RequestTask& rt){
+    if(rt.state != RequestState::FINISH){
+        memset(send_buf, 0, Config::BUFFERLENGTH);
+        int read_size;
+        if(rt.state == RequestState::WAITING_RESPONSE){
+            read_size = rt.res->get_header().length();
+            auto sin = stringstream(rt.res->get_header());
+            sin.read(send_buf, read_size);
+        } else if(rt.state == RequestState::WAITING_FILE) {
+            read_size = Config::BUFFERLENGTH > rt.file_length - rt.offset ? rt.file_length - rt.offset : Config::BUFFERLENGTH;
+            rt.file_stream->read(send_buf, read_size);
+        } else throw runtime_error("ERROR : wrong state of request task");
+
+        int bytes_num = send(s, send_buf, read_size, 0);
+        
+        if( bytes_num == SOCKET_ERROR | bytes_num == 0){
+            closesocket(s);
+            invalid_sockets.push_back(s);
+            cout << "ERROR :  send error" << endl;
+        } else {
+            cout << "INFO :  send " << bytes_num << " bytes to socket:"<<s <<"\n";
+            if(rt.state == RequestState::WAITING_RESPONSE){
+                rt.state = RequestState::WAITING_FILE;
+            } else {
+                rt.offset += read_size;
+            }
+        }
+        if(rt.offset == rt.file_length){
+            rt.state = RequestState::FINISH;
+            rt.file_stream->close();
+            cout << "WARNING : close socket" << s << '\n';
+            closesocket(s);
+            invalid_sockets.push_back(s);
+        }
     }
+}
+
+string Server::cache_file(SOCKET s){
+    return Config::CACHE + "\\recv_temp" + to_string(s) + ".txt";
 }
