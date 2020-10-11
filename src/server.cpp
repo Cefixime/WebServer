@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <cstdio>
 #include <sstream>
 #include <fstream>
 #include <winsock2.h>
@@ -121,7 +122,8 @@ int Server::Loop(){
             for(auto sess:sess_sockets){
                 // 会话socket有信号产生
                 if(FD_ISSET(sess, rfds)){
-                    req_map[sess] = RequestInfo();
+                    if(req_map.find(sess) == req_map.end())
+                        req_map[sess] = RequestTask();
                     cout << "--message from client\n";
                     socket_signal--;
                     recv_mes(sess, Config::CACHE + "\\recv_temp" + to_string(sess) + ".txt");
@@ -131,6 +133,7 @@ int Server::Loop(){
                     req_map[sess].state = RequestState::WAITING_RESPONSE;
                     // TODO:解析报头
                     auto parse_result = parse(sess);
+                    // remove((Config::CACHE + "\\recv_temp" + to_string(sess)).c_str());  // 删除报头文件
                     req_map[sess].file_path = parse_result.first;
                     req_map[sess].file_type = parse_result.second;
                     //TODO:准备文件

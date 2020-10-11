@@ -16,4 +16,6 @@ set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 message(STATUS "output executable file path:" ${EXECUTABLE_OUTPUT_PATH})
 
 add_executable(${PROJECT_NAME} main.cpp ${SRC_LIST} )
-add_executable(server_ex server_ex.cpp)
+
+add_executable(server_ex ./test/server_ex.cpp)
+add_executable(test_http ./test/test_http.cpp ./src/myhttp.cpp)

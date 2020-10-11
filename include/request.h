@@ -9,13 +9,11 @@ enum class RequestState{
     FINISH,
 };
 
-class RequestInfo{
+class RequestTask{
 public:
     RequestState state = RequestState::UNSOLVE;
     int file_length;
     int file_pos;                       //文件位置
-    std::string file_path;
-    std::string file_type;
     std::ifstream* file_stream;
 };
 

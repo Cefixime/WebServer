@@ -11,12 +11,12 @@
 
 class Server{
 private:
-    friend class RequestInfo;
+    friend class RequestTask;
 	SOCKET srv_socket;			           //服务器socket
 	sockaddr_in srv_addr;		           //服务器端IP地址
     std::list<SOCKET> sess_sockets;        //会话socket
     std::list<SOCKET> invalid_sockets;     //失效的会话列表
-    std::map<SOCKET, RequestInfo> req_map;     //请求信息
+    std::map<SOCKET, RequestTask> req_map;     //请求信息
 	char* recv_buf;				           //接受缓冲区
     char* send_buf;                        //发送缓冲区
     bool ready_send;                       //是否可发送
@@ -39,7 +39,7 @@ private:
     void send_mes(SOCKET s, std::ifstream* file_stream, RequestState& finished);  
     
     // 准备文件
-    void prepare_file(RequestInfo& req);
+    void prepare_file(RequestTask& req);
 
     // 解析报文请求文件
     std::pair<std::string,std::string> parse(SOCKET s);
