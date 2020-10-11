@@ -16,18 +16,12 @@ RequestTask::~RequestTask(){
     delete get;
 }
 
-void RequestTask::parse(SOCKET s){
-    auto getheader_file = Server::cache_file(s);
-    ifstream fin(getheader_file);
-    if(fin){
-        stringstream sin;
-        sin << fin.rdbuf();
-        get = new HttpGetHeader(sin.str());
-        res = new HttpResponseHeader(*get, Config::RESOURCE);
-        stringstream(res->get_length()) >> file_length;
-    } else {
-        throw runtime_error("no that cache file: " + getheader_file);
-    }
+void RequestTask::parse(string header){
+    if(header.empty())
+        throw runtime_error("ERROR : empty header");
+    get = new HttpGetHeader(header);
+    res = new HttpResponseHeader(*get, Config::RESOURCE);
+    stringstream(res->get_length()) >> file_length;
 }
 
 void RequestTask::prepare_file(){

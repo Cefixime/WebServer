@@ -22,7 +22,7 @@ private:
     HttpResponseHeader* res{nullptr};
     HttpGetHeader* get{nullptr};
     // 解析报头
-    void parse(SOCKET s);
+    void parse(std::string header);
 
     // 准备文件
     void prepare_file();

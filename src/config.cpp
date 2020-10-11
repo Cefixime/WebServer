@@ -7,7 +7,7 @@ using namespace std;
 
 
 // 初始化服务器配置
-int Config::BUFFERLENGTH = 10240;
+int Config::BUFFERLENGTH = 1024;
 int Config::MAXCONNECTION = 5;
 int Config::PORT = 80;
 std::string Config::SERVERADDRESS = "127.0.0.1";

@@ -13,9 +13,9 @@ Server::Server(){
     recv_buf = new char[Config::BUFFERLENGTH];
     send_buf = new char[Config::BUFFERLENGTH];
     srv_socket = INVALID_SOCKET;
-    rfds = new fd_set();
-    wfds = new fd_set();
-    block_mode = new u_long(UNBLOCKING);
+    // rfds = new fd_set();
+    // wfds = new fd_set();
+    // block_mode = new u_long(UNBLOCKING);
     ready_send = false;
 }
 
@@ -77,74 +77,27 @@ int Server::Loop(){
     tv.tv_sec = 0;
     tv.tv_usec = 10;
     int client_addrlen = sizeof(client_addr);
-    //非阻塞模式
-    if(ioctlsocket(srv_socket, FIONBIO, block_mode) == SOCKET_ERROR) {     
-        cout << "ERROR : ioctlsocket() for new session failed with error!\n";
-        return -1;
-    }
     while (true) {
-        // 设置socket集合
-        FD_ZERO(rfds);
-        FD_ZERO(wfds);
-        FD_SET(srv_socket, rfds);
-
         remove_invalid_sockets();
+        auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
 
-        for(auto &sess: sess_sockets){
-            FD_SET(sess, rfds);
-            FD_SET(sess, wfds);
+        if(new_sess != INVALID_SOCKET){
+            sess_sockets.push_back(new_sess);
+            cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
         }
-
-        // 接受信号
-        socket_signal = select(0, rfds, wfds, NULL, &tv);
-
-        if(socket_signal == SOCKET_ERROR){
-            cout << "ERROR :  select error!" << endl;
-            cout << WSAGetLastError();
-            return -1;
-        }
-        if(FD_ISSET(srv_socket, rfds)){
+        for(auto sess:sess_sockets){
+            if(req_map.find(sess) == req_map.end())
+                req_map[sess] = RequestTask();
             socket_signal--;
-            
-            // 接受连接
-            auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
-
-            if(new_sess != INVALID_SOCKET){
-                sess_sockets.push_back(new_sess);
-                cout << "INFO :  session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
-                // 设置非阻塞
-                if(ioctlsocket(new_sess, FIONBIO, block_mode) == SOCKET_ERROR){
-                    cout << "ERROR :  ioctlsocket() for new session failed with error!\n";
-                    return -1;
+            req_map[sess].parse(recv_mes(sess));
+            req_map[sess].prepare_file();
+            req_map[sess].state = RequestState::WAITING_RESPONSE;
+            while(true){
+                bool flag = false;
+                if(req_map[sess].state == RequestState::WAITING_RESPONSE || req_map[sess].state == RequestState::WAITING_FILE){
+                    flag = send_mes(sess, req_map[sess]);
                 }
-            }
-        }
-
-        if(socket_signal > 0){
-            for(auto sess:sess_sockets){
-                // 会话socket有信号产生
-                if(FD_ISSET(sess, rfds)){
-                    if(req_map.find(sess) == req_map.end())
-                        req_map[sess] = RequestTask();
-                    socket_signal--;
-                    recv_mes(sess, cache_file(sess));
-                    auto &req = req_map[sess];
-                    if(req.state == RequestState::UNSOLVE || req.state == RequestState::FINISH)
-                        req.state = RequestState::IN_STARTING;
-                } else if(sess != srv_socket && req_map[sess].state == RequestState::IN_STARTING){
-                    req_map[sess].state = RequestState::WAITING_RESPONSE;
-                    req_map[sess].parse(sess);
-                    remove(cache_file(sess).c_str());                   // 删除报头文件
-                    req_map[sess].prepare_file();
-                }
-
-                if(FD_ISSET(sess, wfds)){
-                    socket_signal--;
-                    if(req_map[sess].state == RequestState::WAITING_RESPONSE || req_map[sess].state == RequestState::WAITING_FILE){
-                        send_mes(sess, req_map[sess]);
-                    }
-                }
-                // 服务器socket有信号产生
+                if(!flag) break;
             }
         }
     }
@@ -175,23 +128,21 @@ int Server::get_port(SOCKET s){
 	return -1; 
 }
 
-void Server::recv_mes(SOCKET s){
+string Server::recv_mes(SOCKET s){
     int part = 0;
     memset(recv_buf, 0, Config::BUFFERLENGTH);
     stringstream recv_stream;
-    while(true){
-        int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
-        if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
-            closesocket(s);
-            break;
-        } else {
-            recv_stream << "message part"<< part <<":\n";
-            recv_stream << recv_buf;
-            recv_stream << "\nmessage part "<< part << " end\n";
-            part++;
-        }
+    int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
+    if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
+        closesocket(s);
+        cout << "WARNING : invlida socket" << s << '\n';
+        invalid_sockets.push_back(s);
+    } else {
+        cout << "INFO : HTTP request information from socket:" << s << "\n";
+        recv_stream.write(recv_buf, bytes_num);
+        cout << recv_stream.str() << endl;
     }
-    cout << recv_stream.str() << endl;
+    return recv_stream.str();
 }
 
 void Server::recv_mes(SOCKET s, string file_path){
@@ -201,11 +152,11 @@ void Server::recv_mes(SOCKET s, string file_path){
     int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
     if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
         closesocket(s);
-        cout << "WARNING :  invlida socket" << s << '\n';
+        cout << "WARNING : invlida socket" << s << '\n';
         invalid_sockets.push_back(s);
     } else {
         outfile.open(file_path, ios::app|ios::binary);
-        cout << "INFO :  receive " << bytes_num << " bytes from" <<" socket:"<< s << endl;
+        // cout << "INFO :  receive " << bytes_num << " bytes from" <<" socket:"<< s << endl;
         outfile.write(recv_buf, bytes_num);
         outfile.close();
         if(bytes_num < Config::BUFFERLENGTH){
@@ -225,7 +176,7 @@ void Server::remove_invalid_sockets(){
     }
 }
 
-void Server::send_mes(SOCKET s, RequestTask& rt){
+bool Server::send_mes(SOCKET s, RequestTask& rt){
     if(rt.state != RequestState::FINISH){
         memset(send_buf, 0, Config::BUFFERLENGTH);
         int read_size;
@@ -245,9 +196,10 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
             invalid_sockets.push_back(s);
             cout << "ERROR :  send error" << endl;
         } else {
-            cout << "INFO :  send " << bytes_num << " bytes to socket:"<<s <<"\n";
+            // cout << "INFO :  send " << bytes_num << " bytes to socket:"<<s <<"\n";
             if(rt.state == RequestState::WAITING_RESPONSE){
                 rt.state = RequestState::WAITING_FILE;
+                // cout << "INFO : send response header to socket:" << s <<"\n";
             } else {
                 rt.offset += read_size;
             }
@@ -255,11 +207,13 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
         if(rt.offset == rt.file_length){
             rt.state = RequestState::FINISH;
             rt.file_stream->close();
+            cout << "INFO : finish send:" << rt.get->get_req_file() << '\n';
             cout << "WARNING : close socket" << s << '\n';
             closesocket(s);
             invalid_sockets.push_back(s);
         }
-    }
+        return true;
+    } else return false;
 }
 
 string Server::cache_file(SOCKET s){
