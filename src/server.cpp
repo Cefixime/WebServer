@@ -72,43 +72,55 @@ int Server::WinsockStop(){
 
 int Server::Loop(){
     fd_set rdfs;
+    fd_set wdfs;
+    FD_ZERO(&wdfs);
     sockaddr_in client_addr;
-    timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 10;
+    // timeval tv;
+    // tv.tv_sec = 0;
+    // tv.tv_usec = 10;
     int client_addrlen = sizeof(client_addr);
-    u_long unblock = 1;
-    ioctlsocket(srv_socket, FIONBIO, &unblock);
-    int signal;
+    // u_long unblock = 1;
+    // ioctlsocket(srv_socket, FIONBIO, &unblock);
+    // int signal;
     while (true) {
-        FD_ZERO(&rdfs);
-        FD_SET(srv_socket, &rdfs);
-        signal = select(0, &rdfs, nullptr, nullptr, &tv);
-        if(signal > 0 && sess_threads.size() < Config::MAXCONNECTION){
+        // FD_ZERO(&rdfs);
+        // FD_SET(srv_socket, &rdfs);
+        // signal = select(0, &rdfs, &wdfs, nullptr, &tv);
+        // if(signal > 0 && sess_threads.size() < Config::MAXCONNECTION){
+        // if(sess_threads.size() < Config::MAXCONNECTION){
             auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
             if(new_sess != INVALID_SOCKET){
-                cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
-                thread t(Server::session_handler, this, new_sess);
-                sess_threads.push_back(&t);
-                t.detach();
+                io_lock.lock();
+                cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n" << flush;
+                io_lock.unlock();
+                auto flag = new bool(false);
+                auto t = new thread(Server::session_handler, this, new_sess, flag);
+                sess_threads.push_back(make_pair(t, flag));
+                t->detach();
             }
-        }
+        // }
         remove_sess();
+        cout <<'\n' << sess_threads.size() <<'\n' << flush;
     }
     remove_sess();
     while(!sess_threads.empty());
     return 0;
 }
 
-void Server::session_handler(Server* srv, SOCKET new_sess){
+void Server::session_handler(Server* srv, SOCKET new_sess, bool* flag){
         auto reqtask = RequestTask();
+
         srv->recv_lock.lock();
         reqtask.parse(srv->recv_mes(new_sess));
         srv->recv_lock.unlock();
+
+        srv->file_lock.lock();
         reqtask.prepare_file();
+        srv->file_lock.unlock();
+
         reqtask.state = RequestState::WAITING_RESPONSE;
         while(true){
-            bool flag = false;
+            bool flag = true;
             if(reqtask.state == RequestState::WAITING_RESPONSE || reqtask.state == RequestState::WAITING_FILE){
                 srv->send_lock.lock();
                 flag = srv->send_mes(new_sess, reqtask);
@@ -116,6 +128,7 @@ void Server::session_handler(Server* srv, SOCKET new_sess){
             }
             if(!flag) break;
         }
+        *flag = true;
 }
 
 string Server::get_addr(SOCKET s){
@@ -150,17 +163,29 @@ string Server::recv_mes(SOCKET s){
     int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
     if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
         closesocket(s);
-        cout << "WARNING : invlida socket" << s << '\n';
+        io_lock.lock();
+        cout << "WARNING : invalid socket:" << s << '\n' << flush;
+        io_lock.unlock();
     } else {
-        cout << "\nINFO : HTTP request information from socket:" << s << "\n";
+        io_lock.lock();
+        cout << "\nINFO : HTTP request information from socket:" << s << "\n" << flush;
         recv_stream.write(recv_buf, bytes_num);
         cout << recv_stream.str() << endl;
+        io_lock.unlock();
     }
     return recv_stream.str();
 }
 
+bool Server::sess_finished(pair<thread*, bool*> sess){
+    return *(sess.second);
+}
+
 void Server::remove_sess(){
-    auto it_b = remove(sess_threads.begin(), sess_threads.end(), nullptr);
+    auto it_b = remove_if(sess_threads.begin(), sess_threads.end(), Server::sess_finished);
+    for(auto it = it_b; it != sess_threads.end();it++){
+        delete it->first;
+        delete it->second;
+    }
     sess_threads.erase(it_b, sess_threads.end());
 }
 
@@ -181,7 +206,9 @@ bool Server::send_mes(SOCKET s, RequestTask& rt){
         
         if( bytes_num == SOCKET_ERROR | bytes_num == 0){
             closesocket(s);
+            io_lock.lock();
             cout << "ERROR :  send error" << endl;
+            io_lock.unlock();
         } else {
             if(rt.state == RequestState::WAITING_RESPONSE){
                 rt.state = RequestState::WAITING_FILE;
@@ -192,14 +219,12 @@ bool Server::send_mes(SOCKET s, RequestTask& rt){
         if(rt.offset == rt.file_length){
             rt.state = RequestState::FINISH;
             rt.file_stream->close();
+            io_lock.lock();
             cout << "INFO : finish send:" << rt.get->get_req_file() << "\n\n";
-            cout << "WARNING : close socket" << s << '\n';
+            cout << "WARNING : close socket" << s << '\n' << flush;
+            io_lock.unlock();
             closesocket(s);
         }
         return true;
     } else return false;
-}
-
-string Server::cache_file(SOCKET s){
-    return Config::CACHE + "\\recv_temp" + to_string(s) + ".txt";
 }
