@@ -1,6 +1,9 @@
 #include <iostream>
 #include <string>
+#include <algorithm>
 #include <cstdio>
+#include <thread>
+#include <mutex>
 #include <sstream>
 #include <fstream>
 #include <winsock2.h>
@@ -13,10 +16,6 @@ Server::Server(){
     recv_buf = new char[Config::BUFFERLENGTH];
     send_buf = new char[Config::BUFFERLENGTH];
     srv_socket = INVALID_SOCKET;
-    // rfds = new fd_set();
-    // wfds = new fd_set();
-    // block_mode = new u_long(UNBLOCKING);
-    ready_send = false;
 }
 
 Server::~Server(){
@@ -72,35 +71,51 @@ int Server::WinsockStop(){
 }
 
 int Server::Loop(){
+    fd_set rdfs;
     sockaddr_in client_addr;
     timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 10;
     int client_addrlen = sizeof(client_addr);
+    u_long unblock = 1;
+    ioctlsocket(srv_socket, FIONBIO, &unblock);
+    int signal;
     while (true) {
-        remove_invalid_sockets();
-        auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
-
-        if(new_sess != INVALID_SOCKET){
-            sess_sockets.push_back(new_sess);
-            cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
-        }
-        for(auto sess:sess_sockets){
-            if(req_map.find(sess) == req_map.end())
-                req_map[sess] = RequestTask();
-            socket_signal--;
-            req_map[sess].parse(recv_mes(sess));
-            req_map[sess].prepare_file();
-            req_map[sess].state = RequestState::WAITING_RESPONSE;
-            while(true){
-                bool flag = false;
-                if(req_map[sess].state == RequestState::WAITING_RESPONSE || req_map[sess].state == RequestState::WAITING_FILE){
-                    flag = send_mes(sess, req_map[sess]);
-                }
-                if(!flag) break;
+        FD_ZERO(&rdfs);
+        FD_SET(srv_socket, &rdfs);
+        signal = select(0, &rdfs, nullptr, nullptr, &tv);
+        if(signal > 0 && sess_threads.size() < Config::MAXCONNECTION){
+            auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
+            if(new_sess != INVALID_SOCKET){
+                cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n";
+                thread t(Server::session_handler, this, new_sess);
+                sess_threads.push_back(&t);
+                t.detach();
             }
         }
+        remove_sess();
     }
+    remove_sess();
+    while(!sess_threads.empty());
+    return 0;
+}
+
+void Server::session_handler(Server* srv, SOCKET new_sess){
+        auto reqtask = RequestTask();
+        srv->recv_lock.lock();
+        reqtask.parse(srv->recv_mes(new_sess));
+        srv->recv_lock.unlock();
+        reqtask.prepare_file();
+        reqtask.state = RequestState::WAITING_RESPONSE;
+        while(true){
+            bool flag = false;
+            if(reqtask.state == RequestState::WAITING_RESPONSE || reqtask.state == RequestState::WAITING_FILE){
+                srv->send_lock.lock();
+                flag = srv->send_mes(new_sess, reqtask);
+                srv->send_lock.unlock();
+            }
+            if(!flag) break;
+        }
 }
 
 string Server::get_addr(SOCKET s){
@@ -136,44 +151,17 @@ string Server::recv_mes(SOCKET s){
     if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
         closesocket(s);
         cout << "WARNING : invlida socket" << s << '\n';
-        invalid_sockets.push_back(s);
     } else {
-        cout << "INFO : HTTP request information from socket:" << s << "\n";
+        cout << "\nINFO : HTTP request information from socket:" << s << "\n";
         recv_stream.write(recv_buf, bytes_num);
         cout << recv_stream.str() << endl;
     }
     return recv_stream.str();
 }
 
-void Server::recv_mes(SOCKET s, string file_path){
-    memset(recv_buf, 0, Config::BUFFERLENGTH);
-    stringstream recv_stream;
-    ofstream outfile;
-    int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
-    if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
-        closesocket(s);
-        cout << "WARNING : invlida socket" << s << '\n';
-        invalid_sockets.push_back(s);
-    } else {
-        outfile.open(file_path, ios::app|ios::binary);
-        // cout << "INFO :  receive " << bytes_num << " bytes from" <<" socket:"<< s << endl;
-        outfile.write(recv_buf, bytes_num);
-        outfile.close();
-        if(bytes_num < Config::BUFFERLENGTH){
-            ifstream infile(file_path);
-            cout << "INFO : HTTP request information\n";
-            cout << infile.rdbuf();
-        }
-    }
-}
-
-void Server::remove_invalid_sockets(){
-    for(auto& s: invalid_sockets){
-        sess_sockets.remove(s);
-        auto key = req_map.find(s);
-        if(key != req_map.end())
-            req_map.erase(req_map.find(s));
-    }
+void Server::remove_sess(){
+    auto it_b = remove(sess_threads.begin(), sess_threads.end(), nullptr);
+    sess_threads.erase(it_b, sess_threads.end());
 }
 
 bool Server::send_mes(SOCKET s, RequestTask& rt){
@@ -193,13 +181,10 @@ bool Server::send_mes(SOCKET s, RequestTask& rt){
         
         if( bytes_num == SOCKET_ERROR | bytes_num == 0){
             closesocket(s);
-            invalid_sockets.push_back(s);
             cout << "ERROR :  send error" << endl;
         } else {
-            // cout << "INFO :  send " << bytes_num << " bytes to socket:"<<s <<"\n";
             if(rt.state == RequestState::WAITING_RESPONSE){
                 rt.state = RequestState::WAITING_FILE;
-                // cout << "INFO : send response header to socket:" << s <<"\n";
             } else {
                 rt.offset += read_size;
             }
@@ -207,10 +192,9 @@ bool Server::send_mes(SOCKET s, RequestTask& rt){
         if(rt.offset == rt.file_length){
             rt.state = RequestState::FINISH;
             rt.file_stream->close();
-            cout << "INFO : finish send:" << rt.get->get_req_file() << '\n';
+            cout << "INFO : finish send:" << rt.get->get_req_file() << "\n\n";
             cout << "WARNING : close socket" << s << '\n';
             closesocket(s);
-            invalid_sockets.push_back(s);
         }
         return true;
     } else return false;

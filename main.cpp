@@ -10,7 +10,7 @@
 using namespace std;
 int main(){
 
-    auto server = Server();
+    Server server;
     // 启动服务器
     if(server.WinsockStartup() != 0) return 1;
     if(server.ServerStartup() != 0) return 1;
