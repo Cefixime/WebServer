@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <sstream>
 #include <fstream>
+#include <thread>
 #include <winsock2.h>
 #include "config.h"
 #include "server.h"
@@ -15,17 +16,24 @@ Server::Server(){
     srv_socket = INVALID_SOCKET;
     rfds = new fd_set();
     wfds = new fd_set();
+    stop_signal = new bool(false);
     block_mode = new u_long(UNBLOCKING);
-    ready_send = false;
 }
 
 Server::~Server(){
+    closesocket(srv_socket);
     if(recv_buf != nullptr)
         delete[] recv_buf;
     if(send_buf != nullptr)
         delete[] send_buf;
     if(srv_socket != INVALID_SOCKET)
         srv_socket = INVALID_SOCKET;
+    for(auto& socket: sess_sockets){
+        closesocket(socket);
+    }
+    delete rfds;
+    delete wfds;
+    delete stop_signal;
 }
 
 int Server::WinsockStartup(){
@@ -82,10 +90,13 @@ int Server::Loop(){
         cout << "ERROR : ioctlsocket() for new session failed with error!\n";
         return -1;
     }
+    thread t(Server::Stopservice, stop_signal);
     while (true) {
         // 设置socket集合
+        if(*stop_signal) break;
         FD_ZERO(rfds);
         FD_ZERO(wfds);
+
         FD_SET(srv_socket, rfds);
 
         remove_invalid_sockets();
@@ -93,16 +104,20 @@ int Server::Loop(){
         for(auto &sess: sess_sockets){
             FD_SET(sess, rfds);
             FD_SET(sess, wfds);
+
         }
 
         // 接受信号
         socket_signal = select(0, rfds, wfds, NULL, &tv);
-
         if(socket_signal == SOCKET_ERROR){
             cout << "ERROR :  select error!" << endl;
             cout << WSAGetLastError();
             return -1;
         }
+
+
+
+
         if(FD_ISSET(srv_socket, rfds)){
             socket_signal--;
             
@@ -144,10 +159,11 @@ int Server::Loop(){
                         send_mes(sess, req_map[sess]);
                     }
                 }
-                // 服务器socket有信号产生
             }
         }
     }
+    t.join();
+    return 1;
 }
 
 string Server::get_addr(SOCKET s){
@@ -223,6 +239,7 @@ void Server::remove_invalid_sockets(){
         if(key != req_map.end())
             req_map.erase(req_map.find(s));
     }
+    invalid_sockets.clear();
 }
 
 void Server::send_mes(SOCKET s, RequestTask& rt){
@@ -245,7 +262,6 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
             invalid_sockets.push_back(s);
             cout << "ERROR :  send error" << endl;
         } else {
-            cout << "INFO :  send " << bytes_num << " bytes to socket:"<<s <<"\n";
             if(rt.state == RequestState::WAITING_RESPONSE){
                 rt.state = RequestState::WAITING_FILE;
             } else {
@@ -264,4 +280,15 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
 
 string Server::cache_file(SOCKET s){
     return Config::CACHE + "\\recv_temp" + to_string(s) + ".txt";
+}
+
+void Server::Stopservice(bool* signal){
+    string temp;
+    while(true){
+        cin >> temp;
+        if(temp == "quit")
+            break;
+    }
+    *signal = true;
+    cout << "WARNING : STOP SERVICE" << endl;
 }

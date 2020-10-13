@@ -19,13 +19,12 @@ private:
     std::map<SOCKET, RequestTask> req_map;     //请求信息
 	char* recv_buf;				           //接受缓冲区
     char* send_buf;                        //发送缓冲区
-    bool ready_send;                       //是否可发送
 	fd_set* rfds;				           //用于检查socket是否有数据到来的的文件描述符，用于socket非阻塞模式下等待网络事件通知（有数据到来）
 	fd_set* wfds;				           //用于检查socket是否可以发送的文件描述符，用于socket非阻塞模式下等待网络事件通知（可以发送数据）
     int socket_signal;                     //socket信号，表示有事件发生
     u_long* block_mode;                    //阻塞模式
     int erron;                             //错误号
-
+    bool* stop_signal;
     // 失效的socket列表
     void remove_invalid_sockets();
     
@@ -50,6 +49,8 @@ public:
     Server();
     ~Server();
 
+    static void Stopservice(bool* signal);
+
     //初始化Winsock
     int WinsockStartup();	
 
@@ -61,6 +62,9 @@ public:
 
     //循环执行"等待客户端请求"->“向其他客户转发信息”->"等待客户端消息"		
     int Loop();		
+
+    // 清除信息
+    void Clear();
 
     // 结束Winsock			
     int WinsockStop();          
