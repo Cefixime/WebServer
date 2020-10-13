@@ -17,7 +17,7 @@ int main(){
         if(state == 1){
             cout << "STRART SERVEICE ?:Y/N\n";
             cin >> start;
-
+            cin.get();
             if(start == "Y"){
                 // 修改服务器配置
                 auto server = Server();
