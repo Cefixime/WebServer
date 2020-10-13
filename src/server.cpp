@@ -15,6 +15,7 @@ using namespace std;
 Server::Server(){
     recv_buf = new char[Config::BUFFERLENGTH];
     send_buf = new char[Config::BUFFERLENGTH];
+    alive_threads = 0;
     srv_socket = INVALID_SOCKET;
 }
 
@@ -71,28 +72,42 @@ int Server::WinsockStop(){
 }
 
 int Server::Loop(){
-    fd_set rdfs;
-    fd_set wdfs;
-    FD_ZERO(&wdfs);
+    bool stop = false;
+    fd_set rfds;
+    timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 10;
+    u_long unblocking = 1;
+    u_long blocking = 0;
     sockaddr_in client_addr;
-
     int client_addrlen = sizeof(client_addr);
-
+    ioctlsocket(srv_socket, FIONBIO, &unblocking);
+    thread stop_service(Server::StopService, &stop);
+    int signal;
     while (true) {
-        auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
-        if(new_sess != INVALID_SOCKET){
-            io_lock.lock();
-            cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n" << flush;
-            io_lock.unlock();
-            thread t(Server::session_handler, this, new_sess);
-            t.detach();
+        if(stop) break;
+        FD_ZERO(&rfds);
+        FD_SET(srv_socket, &rfds);
+        signal = select(0, &rfds, NULL, NULL ,&tv);
+        if(signal == 1 && alive_threads < Config::MAXCONNECTION){
+            auto new_sess = accept(srv_socket, (LPSOCKADDR)&client_addr, &client_addrlen);
+            ioctlsocket(new_sess,FIONBIO, &blocking);
+            if(new_sess != INVALID_SOCKET){
+                cout << "INFO : session connect : " << '\"' << get_addr(new_sess) + ":" << get_port(new_sess) <<" socket:" <<new_sess << "\"\n" << flush;
+                state_lock.lock();
+                alive_threads++;
+                state_lock.unlock();
+                thread t(Server::session_handler, this, new_sess, &alive_threads);
+                t.detach();
+            }
         }
+        // cout << "alive threads: " << alive_threads << endl;
     }
-    cout << "over" << endl;
+    while(alive_threads > 0);           // 等待线程
     return 0;
 }
 
-void Server::session_handler(Server* srv, SOCKET new_sess, bool* is_alive){
+void Server::session_handler(Server* srv, SOCKET new_sess, int* alive_threads){
         auto reqtask = RequestTask();
         reqtask.parse(srv->recv_mes(new_sess));
         reqtask.prepare_file();
@@ -105,7 +120,7 @@ void Server::session_handler(Server* srv, SOCKET new_sess, bool* is_alive){
             if(reqtask.state == RequestState::FINISH) break;
         }
         srv->state_lock.lock();
-        *is_alive = false;
+        (*alive_threads)--;
         srv->state_lock.unlock();
 }
 
@@ -141,15 +156,11 @@ string Server::recv_mes(SOCKET s){
     int bytes_num = recv(s, recv_buf, Config::BUFFERLENGTH, 0);
     if(bytes_num == 0 | bytes_num == SOCKET_ERROR){
         closesocket(s);
-        io_lock.lock();
         cout << "WARNING : invalid socket:" << s << '\n' << flush;
-        io_lock.unlock();
     } else {
-        io_lock.lock();
         cout << "\nINFO : HTTP request information from socket:" << s << "\n" << flush;
         recv_stream.write(recv_buf, bytes_num);
         cout << recv_stream.str() << endl;
-        io_lock.unlock();
     }
     this->recv_lock.unlock();
     return recv_stream.str();
@@ -159,13 +170,6 @@ bool Server::sess_finished(bool* sess){
     return ~(*sess);
 }
 
-void Server::remove_sess(){
-    auto it_b = remove_if(alive_threads.begin(), alive_threads.end(), Server::sess_finished);
-    for(auto it = it_b; it != alive_threads.end();it++){
-        delete *it;
-    }
-    alive_threads.erase(it_b, alive_threads.end());
-}
 
 void Server::send_mes(SOCKET s, RequestTask& rt){
     this->send_lock.lock();
@@ -184,10 +188,8 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
     this->send_lock.unlock();
     if( bytes_num == SOCKET_ERROR | bytes_num == 0){
         closesocket(s);
-        io_lock.lock();
         cout << "ERROR :  send error" << '\n';
         cout << "ERROR num: " << WSAGetLastError() << '\n';
-        io_lock.unlock();
         rt.state = RequestState::FINISH;
         rt.file_stream->close();
     } else {
@@ -200,10 +202,19 @@ void Server::send_mes(SOCKET s, RequestTask& rt){
     if(rt.offset == rt.file_length){
         rt.state = RequestState::FINISH;
         rt.file_stream->close();
-        io_lock.lock();
         cout << "INFO : finish send:" << rt.get->get_req_file() << "\n\n";
         cout << "WARNING : close socket" << s << '\n' << flush;
-        io_lock.unlock();
         closesocket(s);
     }
+}
+
+void Server::StopService(bool* stop){
+    string temp;
+    while(true){
+        cin >> temp;
+        if(temp == "quit"){
+            break;
+        }
+    }
+    (*stop) = true;
 }
