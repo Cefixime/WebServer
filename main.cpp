@@ -10,16 +10,31 @@
 using namespace std;
 int main(){
 
-    Server server;
     // 启动服务器
-    if(server.WinsockStartup() != 0) return 1;
-    if(server.ServerStartup() != 0) return 1;
+    int state = 1;
+    string start;
+    while(true){
+        if(state == 1){
+            cout << "STRART SERVEICE ?:Y/N\n";
+            cin >> start;
 
-    // 修改服务器配置
-    Config::set_config();
-
-    if(server.ListenStartup() != 0) return 1;
-    if(server.Loop() != 0) return 1;
-    if(server.WinsockStop() != 0) return 1;
+            if(start == "Y"){
+                // 修改服务器配置
+                Server server;
+                Config::set_config();
+                if(!server.WinsockStartup() && !server.ServerStartup() && !server.ListenStartup()){
+                    state = server.Loop();
+                    if(server.WinsockStop())
+                        break;
+                }
+                else
+                    return 1;
+            } else if (start == "N")
+                break;
+        } else {
+            cout << "SERVICE ERROR\n";
+            break;
+        }
+    }
     return 0;
 }

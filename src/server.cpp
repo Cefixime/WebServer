@@ -104,7 +104,8 @@ int Server::Loop(){
         // cout << "alive threads: " << alive_threads << endl;
     }
     while(alive_threads > 0);           // 等待线程
-    return 0;
+    stop_service.join();
+    return 1;
 }
 
 void Server::session_handler(Server* srv, SOCKET new_sess, int* alive_threads){
